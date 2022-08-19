@@ -57,7 +57,7 @@ if __name__ == '__main__':
     print(f"init base data {datetime.now()}")
 
     # load SQL query
-    con = sqlite3.connect("spotify.sqlite")
+    con = sqlite3.connect("data+/spotify.sqlite")
     con.text_factory = str
     r_track_artist = pd.read_sql_query("SELECT * FROM r_track_artist", con)
     artists = pd.read_sql_query("SELECT * FROM artists", con)
