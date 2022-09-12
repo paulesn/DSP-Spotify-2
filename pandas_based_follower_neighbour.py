@@ -6,46 +6,6 @@ import pandas as pd
 import pickle
 import matplotlib.pyplot as plt
 
-statement1 = """SELECT A.artist_id, AA.followers, AVG(BB.followers)
-FROM r_track_artist as A, r_track_artist as B, artists as AA, artists as BB
-WHERE A.track_id == B.track_id
-AND A.artist_id == AA.id
-AND B.artist_id == BB.id
-AND AA.id != BB.id
-GROUP BY A.artist_id"""
-
-statement2 = """SELECT artists.followers, AVG(temp.out)
-FROM r_track_artist as B, r_track_artist AS C, artists, (SELECT A.artist_id AS id, AA.followers, AVG(BB.followers) AS out
-                                                            FROM r_track_artist as A, r_track_artist as B, artists as AA, artists as BB
-                                                            WHERE A.track_id == B.track_id
-                                                            AND A.artist_id == AA.id
-                                                            AND B.artist_id == BB.id
-                                                            GROUP BY A.artist_id) AS temp
-WHERE B.track_id == C.track_id
-AND B.artist_id == artists.id
-AND C.artist_id == temp.id
-GROUP BY B.artist_id"""
-
-statement3 = """
-SELECT artists.followers, AVG(temp2.out2) as fout
-FROM artists, r_track_artist as AAA, r_track_artist as BBB,
-    (SELECT id2, artists.followers, AVG(temp.out) as out2
-FROM r_track_artist as B, r_track_artist AS C, artists, (SELECT A.artist_id AS id2, AA.followers, AVG(BB.followers) AS out
-                                                            FROM r_track_artist as A, r_track_artist as B, artists as AA, artists as BB
-                                                            WHERE A.track_id == B.track_id
-                                                            AND A.artist_id == AA.id
-                                                            AND B.artist_id == BB.id
-                                                            GROUP BY A.artist_id) AS temp
-WHERE B.track_id == C.track_id
-AND B.artist_id == artists.id
-AND C.artist_id == temp.id2
-GROUP BY B.artist_id) as temp2
-
-WHERE AAA.artist_id == artists.id
-AND BBB.artist_id == temp2.id2
-AND AAA.artist_id == BBB.artist_id
-GROUP BY AAA.artist_id
-"""
 
 '''
 This file loads all nodes, their amount of followers and 
@@ -60,38 +20,67 @@ if __name__ == '__main__':
     con = sqlite3.connect("data+/spotify.sqlite")
     con.text_factory = str
     r_track_artist = pd.read_sql_query("SELECT * FROM r_track_artist", con)
-    artists = pd.read_sql_query("SELECT * FROM artists", con)
+
+    artists = pd.read_sql_query("SELECT id, followers FROM artists", con)
     con.close()
     print(f"base data init finished {datetime.now()}")
 
     edge_list = r_track_artist.merge(r_track_artist, left_on="track_id", right_on="track_id")
+    edge_list = edge_list[edge_list.artist_id_x > edge_list.artist_id_y].reset_index(drop=True)
     print(f"edge list created {datetime.now()}")
 
-    edge_list = edge_list.groupby(1)
-    print(f"edge list grouped {datetime.now()}")
+    foll_list = edge_list.merge(right=artists,left_on="artist_id_y", right_on="id")
+    foll_list = foll_list[["artist_id_x","followers"]].rename(columns={"followers":"1-hop"})
+    print(f"edge list reformated to foll list {datetime.now()}")
+
+    groups = foll_list.groupby(["artist_id_x"]).mean()
+    print(f"edge list grouped and mean calculated for 1-hop {datetime.now()}")
+    df1 = groups.merge(right=artists, left_on="artist_id_x", right_on="id")[["followers","1-hop"]]
+
+    ##############################################################
+    # 2 - HOP
+    ##############################################################
+
+    foll_list = edge_list.merge(right=groups.reset_index(),left_on="artist_id_y", right_on="artist_id_x")
+    foll_list = foll_list[["artist_id_x_x", "1-hop"]].rename(columns={"1-hop": "2-hop"})
+    groups = foll_list.groupby(["artist_id_x_x"]).mean()
+    print(f"created 2-hop {datetime.now()}")
+    df2= groups.merge(right=artists, left_on="artist_id_x_x", right_on="id")[["followers","2-hop"]]
+
+    ##############################################################
+    # 3 - HOP
+    ##############################################################
+
+    foll_list2 = edge_list.merge(right=groups.reset_index(), left_on="artist_id_y", right_on="artist_id_x_x")
+    foll_list2 = foll_list2[["artist_id_x_x", "2-hop"]].rename(columns={"2-hop": "3-hop"})
+    groups = foll_list2.groupby(["artist_id_x_x"]).mean()
+    print(f"created 3-hop {datetime.now()}")
+    df3 = groups.merge(right=artists, left_on="artist_id_x_x", right_on="id")[["followers","3-hop"]]
+
+
 
     # store data to disk
     with open('data+/neigbour_for_scatter.pickle', 'wb') as f:
         pickle.dump((df1, df2, df3), f)
 
     # create scatter plot
-    plt.scatter(df1['followers'], df1['AVG(BB.followers)'], c='red', alpha=0.3)
-    plt.scatter(df2['followers'], df2['AVG(temp.out)'], c='green', alpha=0.3)
-    plt.scatter(df3['followers'], df3['fout'], c='blue', alpha=0.3)
+    plt.scatter(df1['followers'], df1['1-hop'], c='red', alpha=0.3)
+    plt.scatter(df2['followers'], df2['2-hop'], c='green', alpha=0.3)
+    plt.scatter(df3['followers'], df3['3-hop'], c='blue', alpha=0.3)
 
     # calc linear regression
 
-    b1, a1 = np.polyfit(df1['followers'], df1['AVG(BB.followers)'], deg=1)
-    b2, a2 = np.polyfit(df2['followers'], df2['AVG(temp.out)'], deg=1)
-    b3, a3 = np.polyfit(df3['followers'], df3['fout'], deg=1)
+    b1, a1 = np.polyfit(df1['followers'], df1['1-hop'], deg=1)
+    b2, a2 = np.polyfit(df2['followers'], df2['2-hop'], deg=1)
+    b3, a3 = np.polyfit(df3['followers'], df3['3-hop'], deg=1)
 
     # Create sequence of 100 numbers from 0 to 100
-    xseq = np.linspace(0, 10, num=10000)
+    xseq = np.linspace(0, 10, num=100000)
 
     # Plot regression line
-    plt.plot(xseq, a1 + b1 * xseq, color="red", lw=2.5);
-    plt.plot(xseq, a2 + b2 * xseq, color="green", lw=2.5);
-    plt.plot(xseq, a3 + b3 * xseq, color="blue", lw=2.5);
+    plt.plot(xseq, b1 + a1 * xseq, color="red", lw=2.5);
+    plt.plot(xseq, b2 + a2 * xseq, color="green", lw=2.5);
+    plt.plot(xseq, b3 + a3 * xseq, color="blue", lw=2.5);
 
     ax = plt.gca()
     plt.xlabel('Follower of Node')
