@@ -9,6 +9,7 @@ WORKDIR /
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir numpy pandas
 RUN pip install --no-cache-dir networkx matplotlib
+RUN pip install --no-cache-dir psycopg2-binary
 
 # In order to launch our python code, we must import it into our image.
 # We use the keyword 'COPY' to do that.
@@ -16,14 +17,14 @@ RUN pip install --no-cache-dir networkx matplotlib
 # The second parameter '/' is the path where to put the file on the image.
 # Here we put the file at the image root folder.
 RUN mkdir data+
-COPY artist_follower_vs_neigbours.py /
+COPY clean/dataloader.py /clean
 
 
 # We need to define the command to launch when we are going to run the image.
 # We use the keyword 'CMD' to do that.
 # The following command will execute "python ./main.py".
 #CMD cat /etc/alpine-release file_does_not_exist.txt > /home/output.txt 2>/home/error.txt
-CMD  python /artist_follower_vs_neigbours.py
+CMD  python /clean/data_loader.py
 #CMD [ "python", "./send_data.py" ]
 #to run this image:
 # sudo docker run --mount 'type=bind,src={absolut/path/to/data_folder},dst=/data/hospital' thesis:latest

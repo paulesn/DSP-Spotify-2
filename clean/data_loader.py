@@ -2,12 +2,6 @@ import psycopg2
 import pandas as pd
 import pickle
 
-query = """
-SELECT *
-FROM (r_track_artist a LEFT JOIN r_track_artist b ON a.track_id LIKE b.track_id) JOIN tracks ON a.track_id LIKE tracks.id
-WHERE a.artist_id < b.artist_id;
-"""
-
 
 if __name__ == '__main__':
 
@@ -18,12 +12,27 @@ if __name__ == '__main__':
         user="postgres",
         password="digitus"
     )
-    #alq = create_engine(
-    #    url="postgresql+psycopg2://postgres:digitus@85.214.90.195:5532/postgres'",
-    #)
-    df = pd.read_sql(query, conn)
+    # initial data loading
+    rta = pd.read_sql("SELECT * FROM r_track_artist", conn)
+    artist = pd.read_sql("SELECT * FROM artists WHERE popularity > 0", conn).drop("name", axis=1)
+
+    aXa = pd.merge(rta, rta, on="track_id")\
+        .drop("track_id", axis=1)
+    groups = aXa.groupby("artist_id_x")
+    groups_counted = groups.count()\
+        .reset_index()\
+        .rename(columns={"artist_id_y": "no_of_artists"})
+    aXa = pd.merge(left=groups_counted, right=artist, left_on="artist_id_x", right_on="id")
+    groups = aXa.drop(["artist_id_x", "id"], axis=1)\
+        .rename(columns={"no_of_artists": "no_of_tracks"})\
+        .groupby("no_of_tracks")
+    groups_max = groups.max()
+    groups_max = groups.max().reset_index()
+
+
     # store data to disk
-    with open('../data+/tracks-pop.pickle', 'wb') as f:
-        pickle.dump(df, f)
+    with open('../data+/artists-pop-foll.pickle', 'wb') as f:
+        print("here")
+        pickle.dump(groups, f)
 
 
